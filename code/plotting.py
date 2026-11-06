@@ -672,7 +672,7 @@ TIME_PANELS = {
     "중마시장": ["쇼핑여가 목적 도착 OD", "쇼핑여가 목적 체류 STAY"],
 }
 WEEK_MEASURES = {"구룡포시장": ["도착 OD 전체", "여행 목적 체류 STAY"]}
-WEEK_NOTES = {"중마시장": " (일평균 건수: 평일 123.1건, 주말 80.5건)"}
+WEEKEND_RATIO_NATIONAL = {"도착 OD 전체": 1.03, "여행 목적 체류 STAY": 1.88}
 
 
 def _draw_hours(ax, part, measure):
@@ -704,6 +704,30 @@ def _draw_week(ax, week, measures, note=""):
     ax.grid(axis="y", alpha=.15)
 
 
+def _draw_guryongpo_weekend_ratios(ax, week):
+    measures = ["도착 OD 전체", "여행 목적 체류 STAY"]
+    for i, measure in enumerate(measures):
+        part = week.loc[week.measure.eq(measure)]
+        assert len(part) == 7, measure
+        weekday = part.loc[part.day_of_week.lt(5)]
+        weekend = part.loc[part.day_of_week.ge(5)]
+        weekday_mean = np.average(weekday.daily_index, weights=weekday.observed_days)
+        weekend_mean = np.average(weekend.daily_index, weights=weekend.observed_days)
+        ratio = weekend_mean / weekday_mean
+        ax.barh(i - .15, ratio, height=.3, color=BLUE, label="구룡포" if i == 0 else None)
+        ax.barh(i + .15, WEEKEND_RATIO_NATIONAL[measure], height=.3, color="#aebcc7",
+                label="전국 평균" if i == 0 else None)
+        ax.text(ratio + .06, i - .15, f"{ratio:.2f}배", va="center", fontsize=10)
+        ax.text(WEEKEND_RATIO_NATIONAL[measure] + .06, i + .15,
+                f"{WEEKEND_RATIO_NATIONAL[measure]:.2f}배", va="center", fontsize=10)
+    ax.set(yticks=range(len(measures)), yticklabels=measures, xlim=(0, 3.7), xlabel="주말/평일")
+    ax.invert_yaxis()
+    ax.set_title("주말/평일 일평균 배수", loc="left", fontsize=12, color=INK)
+    ax.spines[["top", "right", "left"]].set_visible(False)
+    ax.grid(axis="x", alpha=.15)
+    ax.legend(frameon=False, fontsize=9, loc="lower right")
+
+
 def plot_time_weekday(case):
     """공개 요약값으로 사례의 시간·요일 그림을 저장한다."""
     measures = TIME_PANELS[case]
@@ -722,7 +746,10 @@ def plot_time_weekday(case):
         ax_week = fig.add_subplot(gs[0, 1])
     for ax, measure in zip(axes, measures):
         _draw_hours(ax, hours.loc[hours.measure.eq(measure)], measure)
-    _draw_week(ax_week, week, WEEK_MEASURES.get(case, measures[:1]), WEEK_NOTES.get(case, ""))
+    if case == "구룡포시장":
+        _draw_guryongpo_weekend_ratios(ax_week, week)
+    else:
+        _draw_week(ax_week, week, WEEK_MEASURES.get(case, measures[:1]))
     fig.suptitle(f"{case} · 요일·시간", x=.07, y=.97, ha="left", fontsize=15, color=INK, fontweight="bold")
     fig.savefig(FIGS / TIME_FIGURES[case], dpi=175, bbox_inches="tight", pad_inches=.22)
     plt.close(fig)
@@ -1005,18 +1032,17 @@ SILLIM_DONGS = ["신사동", "신원동", "서림동", "난곡동"]
 SILLIM_SHARES = {
     "도착 OD 중 귀가": ([82.2, 78.6, 91.0, 93.1], 55.7),
     "체류 STAY 중 귀가": ([78.4, 83.5, 83.8, 89.3], 65.0),
-    "체류 STAY 중 20·30대": ([29.9, 29.8, 47.0, 26.1], 26.3),
 }
 SILLIM_HOME_HOURS = {"신사동": [0.077501, 0.034217, 0.030877, 0.030745, 0.036933, 0.040562, 0.044097, 0.059259, 0.073802, 0.075233, 0.108492, 0.115234, 0.087275, 0.086147, 0.067306, 0.03232], "신원동": [0.060605, 0.034636, 0.036223, 0.035753, 0.043424, 0.044131, 0.046259, 0.063602, 0.084764, 0.086381, 0.093187, 0.09503, 0.087758, 0.079226, 0.074036, 0.034986], "서림동": [0.050458, 0.035224, 0.033072, 0.038074, 0.045998, 0.051827, 0.049904, 0.066195, 0.076841, 0.078539, 0.100591, 0.093952, 0.080037, 0.080428, 0.076969, 0.041891], "난곡동": [0.061915, 0.037413, 0.03613, 0.034995, 0.038149, 0.044457, 0.055213, 0.073302, 0.088688, 0.085471, 0.114736, 0.111514, 0.079804, 0.064291, 0.052947, 0.020975], "전국 평균": [0.069514, 0.033779, 0.028465, 0.031279, 0.038804, 0.045498, 0.051712, 0.067077, 0.087562, 0.108299, 0.130322, 0.091874, 0.076906, 0.066382, 0.050532, 0.021994]}
 SILLIM_HOME_EVENING = {"신사동": {"평일": 2370, "주말": 1866}, "신원동": {"평일": 3795, "주말": 3289}, "서림동": {"평일": 2569, "주말": 1938}, "난곡동": {"평일": 2411, "주말": 1750}}
 
 
 def plot_sillim_purpose():
-    """네 동의 귀가 비중과 20·30대 체류 비중을 전국 평균과 비교한다."""
-    fig, axes = plt.subplots(1, 3, figsize=(13, 3.7))
+    """네 동의 귀가 목적 도착·체류 비중을 전국 평균과 비교한다."""
+    fig, axes = plt.subplots(1, 2, figsize=(11, 3.7))
     for ax, (title, (values, national)) in zip(axes, SILLIM_SHARES.items()):
         _nearby_bar(ax, title, SILLIM_DONGS + ["전국 평균"], values + [national])
-    fig.suptitle("신림 시장권 · 방문·체류 목적·연령", x=.02, y=1.0, ha="left", fontsize=15, fontweight="bold", color=INK)
+    fig.suptitle("신림 시장권 · 귀가 목적 도착·체류", x=.02, y=1.0, ha="left", fontsize=15, fontweight="bold", color=INK)
     fig.tight_layout()
     fig.savefig(FIGS / "fig_v4_3a_sillim_purpose.png", dpi=175, bbox_inches="tight", pad_inches=.22)
     plt.close(fig)
