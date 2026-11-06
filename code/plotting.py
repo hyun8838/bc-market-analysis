@@ -30,7 +30,6 @@ plt.rcParams.update({"font.family": "AppleGothic", "axes.unicode_minus": False,
 INK, FOCUS, REF = "#243447", "#176b87", "#aebcc7"
 BLUE, PALE, GOLD = "#176b87", "#afc7d0", "#c68c40"
 ORANGE, GRAY = "#c58b38", "#9ca9b4"
-DAYS = ["월", "화", "수", "목", "금", "토", "일"]
 
 def _case_comparison(path, title, panels, note):
     fig, axes = plt.subplots(1, len(panels), figsize=(5.2 * len(panels), 3.4), squeeze=False)
@@ -70,15 +69,12 @@ def plot_case_comparison(case):
 PURPOSE = {
     '구룡포시장': {'도착 OD': {'귀가': 0.111862, '업무': 0.074554, '학업': 0.004427, '쇼핑여가': 0.018716, '기타': 0.434684, '여행': 0.355757},
         '체류 STAY': {'귀가': 0.500979, '업무': 0.102237, '학업': 0.001893, '쇼핑여가': 0.007255, '기타': 0.23439, '여행': 0.153245}},
-    '중마시장': {'도착 OD': {'귀가': 0.623851, '업무': 0.054776, '학업': 0.01478, '쇼핑여가': 0.008307, '기타': 0.279139, '여행': 0.019147},
-        '체류 STAY': {'귀가': 0.777284, '업무': 0.059865, '학업': 0.008785, '쇼핑여가': 0.007126, '기타': 0.116086, '여행': 0.030854}},
     '국제시장권': {'도착 OD': {'귀가': 0.160507, '업무': 0.117235, '학업': 0.000932, '쇼핑여가': 0.406507, '기타': 0.157782, '여행': 0.157036},
         '체류 STAY': {'귀가': 0.26869, '업무': 0.20817, '학업': 0.000506, '쇼핑여가': 0.275736, '기타': 0.142551, '여행': 0.104346}},
 }
 PURPOSE_COLORS = {"귀가": BLUE, "쇼핑여가": ORANGE, "여행": "#4f8a5b"}
 PURPOSE_FIGURES = {
     "구룡포시장": ("fig_v4_1a_guryongpo_purpose.png", ["여행"]),
-    "중마시장": ("fig_v4_2a_jungma_purpose.png", ["귀가", "쇼핑여가"]),
     "국제시장권": ("fig_v4_4a_international_purpose.png", ["쇼핑여가"]),
 }
 OTHER_GRAYS = ["#c9d2d9", "#b5c0c8", "#dbe1e6", "#a6b3bd", "#e6eaee"]
@@ -668,11 +664,11 @@ TIME_FIGURES = {
     "중마시장": "fig_v4_2c_jungma_time_weekday.png",
 }
 TIME_PANELS = {
-    "구룡포시장": ["도착 OD 전체"],
-    "중마시장": ["쇼핑여가 목적 도착 OD", "쇼핑여가 목적 체류 STAY"],
+    "구룡포시장": "도착 OD 전체",
+    "중마시장": "쇼핑여가 목적 도착 OD",
 }
-WEEK_MEASURES = {"구룡포시장": ["도착 OD 전체", "여행 목적 체류 STAY"]}
 WEEKEND_RATIO_NATIONAL = {"도착 OD 전체": 1.03, "여행 목적 체류 STAY": 1.88}
+JUNGMA_DAILY_SHOPPING = {"평일": 123.1, "주말": 80.5}
 
 
 def _draw_hours(ax, part, measure):
@@ -687,21 +683,6 @@ def _draw_hours(ax, part, measure):
     ax.spines[["top", "right"]].set_visible(False)
     ax.grid(axis="y", alpha=.15)
     ax.legend(frameon=False, fontsize=9, loc="upper left")
-
-
-def _draw_week(ax, week, measures, note=""):
-    title = (" · ".join(measures) + " · 요일" if len(measures) == 1 else "요일") + note
-    for measure, color in zip(measures, [BLUE, PURPOSE_COLORS["여행"]]):
-        part = week.loc[week.measure.eq(measure)].sort_values("day_of_week")
-        assert len(part) == 7, measure
-        share = part.daily_index / part.daily_index.sum() * 100
-        ax.plot(part.day_of_week, share, color=color, marker="o", markersize=6, linewidth=1.6, label=measure)
-    ax.set(xticks=range(7), xticklabels=DAYS, ylabel="요일별 일평균 구성비 (%)")
-    ax.set_title(title, loc="left", fontsize=12, color=INK)
-    if len(measures) > 1:
-        ax.legend(frameon=False, fontsize=9, loc="upper left")
-    ax.spines[["top", "right"]].set_visible(False)
-    ax.grid(axis="y", alpha=.15)
 
 
 def _draw_guryongpo_weekend_ratios(ax, week):
@@ -728,28 +709,39 @@ def _draw_guryongpo_weekend_ratios(ax, week):
     ax.legend(frameon=False, fontsize=9, loc="lower right")
 
 
+def _draw_jungma_daily_counts(ax, week):
+    part = week.loc[week.measure.eq("쇼핑여가 목적 도착 OD")]
+    assert len(part) == 7
+    # 건수는 비공개 원자료 값이고, 저장된 요일 지수의 주말/평일 비율과 맞는지만 확인한다.
+    weekday = part.loc[part.day_of_week.lt(5)]
+    weekend = part.loc[part.day_of_week.ge(5)]
+    ratio = (np.average(weekend.daily_index, weights=weekend.observed_days)
+             / np.average(weekday.daily_index, weights=weekday.observed_days))
+    assert abs(ratio - JUNGMA_DAILY_SHOPPING["주말"] / JUNGMA_DAILY_SHOPPING["평일"]) < .005
+    names = list(JUNGMA_DAILY_SHOPPING)
+    values = [JUNGMA_DAILY_SHOPPING[name] for name in names]
+    ax.bar(range(2), values, width=.5, color=[BLUE, ORANGE])
+    for i, value in enumerate(values):
+        ax.text(i, value + 3, f"{value:.1f}건", ha="center", fontsize=10, color=INK)
+    ax.set(xticks=range(2), xticklabels=names, xlim=(-.7, 1.7), ylim=(0, 145), ylabel="일평균 도착 건수")
+    ax.set_title("쇼핑여가 목적 도착 OD · 일평균", loc="left", fontsize=12, color=INK)
+    ax.spines[["top", "right"]].set_visible(False)
+    ax.grid(axis="y", alpha=.15)
+
+
 def plot_time_weekday(case):
     """공개 요약값으로 사례의 시간·요일 그림을 저장한다."""
-    measures = TIME_PANELS[case]
+    measure = TIME_PANELS[case]
     hours = HOUR.loc[HOUR.case.eq(case)]
     week = WEEK.loc[WEEK.case.eq(case)]
-    if len(measures) == 2:
-        fig = plt.figure(figsize=(12.5, 6.7))
-        gs = fig.add_gridspec(2, 2, height_ratios=[1.15, .8], hspace=.43, wspace=.28,
-                              left=.07, right=.98, top=.88, bottom=.10)
-        axes = [fig.add_subplot(gs[0, 0]), fig.add_subplot(gs[0, 1])]
-        ax_week = fig.add_subplot(gs[1, :])
-    else:
-        fig = plt.figure(figsize=(12.5, 3.9))
-        gs = fig.add_gridspec(1, 2, wspace=.28, left=.07, right=.98, top=.80, bottom=.17)
-        axes = [fig.add_subplot(gs[0, 0])]
-        ax_week = fig.add_subplot(gs[0, 1])
-    for ax, measure in zip(axes, measures):
-        _draw_hours(ax, hours.loc[hours.measure.eq(measure)], measure)
+    fig = plt.figure(figsize=(12.5, 3.9))
+    gs = fig.add_gridspec(1, 2, wspace=.28, left=.07, right=.98, top=.80, bottom=.17)
+    ax_hour, ax_week = fig.add_subplot(gs[0, 0]), fig.add_subplot(gs[0, 1])
+    _draw_hours(ax_hour, hours.loc[hours.measure.eq(measure)], measure)
     if case == "구룡포시장":
         _draw_guryongpo_weekend_ratios(ax_week, week)
     else:
-        _draw_week(ax_week, week, WEEK_MEASURES.get(case, measures[:1]))
+        _draw_jungma_daily_counts(ax_week, week)
     fig.suptitle(f"{case} · 요일·시간", x=.07, y=.97, ha="left", fontsize=15, color=INK, fontweight="bold")
     fig.savefig(FIGS / TIME_FIGURES[case], dpi=175, bbox_inches="tight", pad_inches=.22)
     plt.close(fig)
@@ -954,14 +946,14 @@ def plot_jungma_nearby(map_png):
     ax.set_yticklabels(names)
     ax.invert_yaxis()
     ax.set_xlim(0, 110)
-    ax.set_title("근처 출발동 쇼핑 OD 중\n시장 행정동 도착", color=INK, fontsize=12, loc="left", pad=12)
+    ax.set_title("근처 3개 동에서 시장 소재 동으로 향한\n쇼핑 OD 중 중마동 도착", color=INK, fontsize=12, loc="left", pad=12)
     ax.spines[["top", "right", "left"]].set_visible(False)
     ax.tick_params(axis="y", length=0, labelsize=10)
     ax.tick_params(axis="x", bottom=False, labelbottom=False)
     for item, value in zip(bars, values):
         ax.text(item.get_width() + 2, item.get_y() + item.get_height() / 2, f"{value:.1f}%",
                 va="center", fontsize=10, color=INK)
-    fig.suptitle("중마시장 · 거리·접근", x=.02, y=.97, ha="left", fontsize=15, color=INK, fontweight="bold")
+    fig.suptitle("중마시장 · 입지·인근 이동", x=.02, y=.97, ha="left", fontsize=15, color=INK, fontweight="bold")
     fig.savefig(FIGS / "fig_v4_2b_jungma_nearby.png", dpi=175, bbox_inches="tight", pad_inches=.2)
     plt.close(fig)
 
